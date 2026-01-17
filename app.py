@@ -4,16 +4,17 @@ from docx import Document
 from pdf2image import convert_from_path
 import pytesseract
 import spacy
-import re
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+import tempfile
 
-# Load spaCy
 nlp = spacy.load("en_core_web_sm")
 
-# ------------------ CONFIG ------------------
+# ---------------- CONFIG ----------------
 GENERIC_SKILLS = [
-    "communication","teamwork","leadership","problem solving",
-    "customer service","sql","python","excel",
-    "data analysis","sales","marketing","machine learning"
+    "communication","teamwork","leadership","customer service",
+    "problem solving","sql","python","excel","data analysis",
+    "sales","marketing"
 ]
 
 JOBS = [
@@ -27,7 +28,7 @@ JOBS = [
      "keywords":["marketing","campaign","content","sales"]}
 ]
 
-# ------------------ TEXT EXTRACTION ------------------
+# ---------------- TEXT EXTRACTION ----------------
 def extract_text(file):
     text = ""
 
@@ -37,7 +38,7 @@ def extract_text(file):
                 if page.extract_text():
                     text += page.extract_text()
 
-        # OCR fallback
+        # OCR fallback for scanned PDFs
         if len(text.strip()) < 50:
             images = convert_from_path(file.name)
             for img in images:
@@ -50,90 +51,102 @@ def extract_text(file):
 
     return text.strip()
 
-# ------------------ KEYWORDS ------------------
-def get_keywords(text):
+# ---------------- NLP ----------------
+def keywords(text):
     doc = nlp(text.lower())
-    return set(
-        token.text for token in doc
-        if token.pos_ in ["NOUN","PROPN"] and len(token.text) > 2
-    )
+    return set(t.text for t in doc if t.pos_ in ["NOUN","PROPN"] and len(t.text) > 2)
 
-# ------------------ ATS SCORE ------------------
-def ats_score(resume, job_keywords):
-    resume_words = get_keywords(resume)
-    matched = resume_words.intersection(job_keywords)
+# ---------------- ATS ----------------
+def ats_score(resume, job_desc):
+    job_keys = keywords(job_desc)
+    resume_keys = keywords(resume)
 
-    score = (len(matched) / max(len(job_keywords),1)) * 100
-    return round(score,2), list(matched), list(job_keywords - resume_words)
+    matched = resume_keys & job_keys
+    missing = job_keys - resume_keys
 
-# ------------------ IMPROVEMENT TIPS ------------------
-def improve_tips(missing):
-    tips = []
-    if missing:
-        tips.append("Add these missing keywords naturally: " + ", ".join(missing[:8]))
-    tips.append("Use action verbs: Managed, Handled, Improved")
-    tips.append("Quantify results (50+ chats/day, 95% CSAT)")
-    tips.append("Add Skills & Experience sections clearly")
-    return tips
+    score = round((len(matched)/max(len(job_keys),1))*100,2)
+    return score, list(matched), list(missing)
 
-# ------------------ JOB MATCHING ------------------
+# ---------------- AI RESUME REWRITE ----------------
+def rewrite_resume(resume):
+    lines = resume.split("\n")
+    improved = []
+
+    for l in lines:
+        if len(l.strip()) > 30:
+            improved.append(f"• Achieved impact by {l.strip()}")
+    return "\n".join(improved[:8])
+
+# ---------------- JOB MATCH ----------------
 def job_match(resume):
+    resume_keys = keywords(resume)
     results = []
-    resume_words = get_keywords(resume)
 
     for job in JOBS:
-        matched = resume_words.intersection(set(job["keywords"]))
-        score = round(len(matched)/len(job["keywords"])*100,2)
+        m = resume_keys & set(job["keywords"])
+        score = round((len(m)/len(job["keywords"]))*100,2)
 
-        results.append({
-            "title":job["title"],
-            "location":job["location"],
-            "score":score,
-            "matched":list(matched)
-        })
+        results.append(f"{job['title']} ({job['location']}) → {score}%\nMatched: {list(m)}")
 
-    return sorted(results, key=lambda x:x["score"], reverse=True)
+    return "\n\n".join(results)
 
-# ------------------ MAIN FUNCTION ------------------
-def analyze_resume(file, job_desc):
-    resume_text = extract_text(file)
+# ---------------- PDF REPORT ----------------
+def generate_pdf(report_text):
+    path = tempfile.mktemp(".pdf")
+    c = canvas.Canvas(path, pagesize=A4)
+    text = c.beginText(40, 800)
 
-    if len(resume_text) < 50:
-        return "❌ Resume text extract nahi ho raha. Image-based PDF ho sakta hai."
+    for line in report_text.split("\n"):
+        text.textLine(line)
 
-    job_keywords = get_keywords(job_desc)
-    score, matched, missing = ats_score(resume_text, job_keywords)
+    c.drawText(text)
+    c.save()
+    return path
 
-    tips = improve_tips(missing)
-    jobs = job_match(resume_text)
+# ---------------- MAIN ----------------
+def analyze(file, job_desc):
+    resume = extract_text(file)
 
-    output = f"""
+    if len(resume) < 50:
+        return "❌ Resume extract nahi ho raha", None, None
+
+    score, matched, missing = ats_score(resume, job_desc)
+    rewritten = rewrite_resume(resume)
+    jobs = job_match(resume)
+
+    report = f"""
 ATS SCORE: {score}/100
 
-Matched Keywords:
+MATCHED KEYWORDS:
 {matched}
 
-Missing Keywords:
+MISSING KEYWORDS:
 {missing}
 
-IMPROVEMENT TIPS:
-- """ + "\n- ".join(tips) + "\n\nTOP JOB MATCHES:\n"
+AI IMPROVED RESUME POINTS:
+{rewritten}
 
-    for j in jobs:
-        output += f"\n{j['title']} ({j['location']}) → {j['score']}%\nMatched: {j['matched']}\n"
+TOP JOB MATCHES:
+{jobs}
+"""
 
-    return output
+    pdf = generate_pdf(report)
+    return report, rewritten, pdf
 
-# ------------------ GRADIO UI ------------------
+# ---------------- UI ----------------
 app = gr.Interface(
-    fn=analyze_resume,
+    fn=analyze,
     inputs=[
-        gr.File(label="Upload Resume (PDF / DOCX)"),
+        gr.File(label="Upload Resume (PDF/DOCX)"),
         gr.Textbox(label="Job Description", lines=5)
     ],
-    outputs="text",
-    title="OCR + ATS Resume Matcher",
-    description="Scans ALL resumes (PDF/DOCX), calculates ATS score, missing keywords, job match & improvement tips"
+    outputs=[
+        gr.Textbox(label="ATS + Job Match Report"),
+        gr.Textbox(label="AI Resume Rewrite"),
+        gr.File(label="Download ATS PDF")
+    ],
+    title="AI Resume ATS Scanner + Improvement Tool",
+    description="Scans ALL resumes, calculates ATS score, rewrites resume, shows job matches & downloadable PDF"
 )
 
 app.launch(server_name="0.0.0.0", server_port=7860)
