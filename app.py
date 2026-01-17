@@ -1,15 +1,18 @@
+# app.py
 import gradio as gr
 import pdfplumber
 from docx import Document
 from pdf2image import convert_from_path
-import pytesseract
+import easyocr
 import spacy
 from difflib import get_close_matches
 
+# -----------------------------
 # Load spaCy model
 nlp = spacy.load("en_core_web_sm")
 
-# Generic Skills
+# -----------------------------
+# Generic skills list
 GENERIC_SKILLS = [
     "communication","teamwork","leadership","problem-solving","critical thinking",
     "time management","adaptability","creativity","data analysis","customer service",
@@ -17,7 +20,8 @@ GENERIC_SKILLS = [
     "machine learning","excel","powerpoint","research"
 ]
 
-# Sample Jobs
+# -----------------------------
+# Sample Jobs Database
 JOBS = [
     {"title": "Customer Support Executive", "description": "Live chat support, customer service, troubleshooting, CRM, communication, multitasking", "location": "Jaipur, Rajasthan"},
     {"title": "Marketing Executive", "description": "Campaign planning, market research, content creation, client communication, reporting", "location": "Mumbai, Maharashtra"},
@@ -25,29 +29,41 @@ JOBS = [
     {"title": "Sales Executive", "description": "Lead generation, client communication, CRM, sales reporting, multitasking", "location": "Jaipur, Rajasthan"}
 ]
 
-# --- OCR + Text Extraction ---
+# -----------------------------
+# Initialize EasyOCR reader
+reader = easyocr.Reader(['en'])
+
+# -----------------------------
+# OCR + Text Extraction Function
 def extract_text_resume_all(file):
     text = ""
     filename = file.name if hasattr(file, "name") else file
+
     if filename.endswith(".pdf"):
+        # Extract text normally first
         with pdfplumber.open(file) as pdf:
             for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n"
+
+        # OCR fallback using EasyOCR
         if len(text.strip()) == 0:
-            pages = convert_from_path(file)
+            pages = convert_from_path(file, dpi=200)
             for page in pages:
-                text += pytesseract.image_to_string(page) + "\n"
+                text += " ".join(reader.readtext(page, detail=0)) + "\n"
+
     elif filename.endswith(".docx"):
         doc = Document(file)
         for para in doc.paragraphs:
             text += para.text + "\n"
     else:
         text = "Unsupported file format!"
+
     return text
 
-# --- Keyword Extraction ---
+# -----------------------------
+# NLP Keyword Extraction
 def extract_keywords_nlp(text):
     doc = nlp(text.lower())
     keywords = set()
@@ -76,7 +92,8 @@ def match_generic_skills_v2(resume_text, generic_skills):
                 matched.append(skill)
     return matched
 
-# --- Sections & ATS Score ---
+# -----------------------------
+# Sections & ATS Score
 SECTION_KEYWORDS = {
     "education": ["education","academic","qualifications","degree","school","college","university"],
     "experience": ["experience","work experience","employment","professional experience","career","background"],
@@ -106,7 +123,8 @@ def calculate_ats_score_v3(resume_text, job_keywords, generic_skills):
     ats_score = section_score + keyword_score + generic_score
     return round(ats_score,2), present_sections, matched_keywords, matched_generic_skills
 
-# --- Missing Keywords + Tips ---
+# -----------------------------
+# Missing Keywords + Resume Tips
 def find_missing_keywords(resume_text, job_description):
     resume_keywords = set(extract_keywords_nlp(resume_text))
     job_keywords = set(extract_keywords_nlp(job_description))
@@ -122,7 +140,8 @@ def resume_improvement_tips(matched_generic_skills, missing_keywords):
     tips.append("Quantify achievements (e.g., 95% customer satisfaction, 50+ chats/day).")
     return tips
 
-# --- Job Matching ---
+# -----------------------------
+# Job Matching Engine
 def match_job(resume_text, job, generic_skills, location_filter=None):
     job_keywords = extract_keywords_nlp(job['description'])
     resume_keywords = extract_keywords_nlp(resume_text)
@@ -151,7 +170,8 @@ def get_top_jobs(resume_text, jobs_list, generic_skills, top_n=5, location=None)
     results = sorted(results, key=lambda x: x['score'], reverse=True)
     return results[:top_n]
 
-# --- Gradio App ---
+# -----------------------------
+# Gradio Interface
 def resume_ats_job_matcher(resume_file, job_description, location_filter=""):
     resume_text = extract_text_resume_all(resume_file)
     if "Unsupported" in resume_text:
@@ -184,17 +204,14 @@ Top Jobs Match:
 
     return result
 
-def main():
-    iface = gr.Interface(
-        fn=resume_ats_job_matcher,
-        inputs=[gr.File(label="Upload Resume (PDF/DOCX)"),
-                gr.Textbox(label="Job Description"),
-                gr.Textbox(label="Preferred Location (Optional)")],
-        outputs="text",
-        title="💼 AI Resume ATS & Job Matcher",
-        description="Upload your resume and paste the job description to calculate ATS score, see missing keywords, improvement tips, and top matching jobs."
-    )
-    iface.launch(server_name="0.0.0.0", server_port=8080)
+iface = gr.Interface(
+    fn=resume_ats_job_matcher,
+    inputs=[gr.File(label="Upload Resume (PDF/DOCX)"),
+            gr.Textbox(label="Job Description"),
+            gr.Textbox(label="Preferred Location (Optional)")],
+    outputs="text",
+    title="💼 AI Resume ATS & Job Matcher",
+    description="Upload your resume and paste the job description to calculate ATS score, see missing keywords, improvement tips, and top matching jobs."
+)
 
-if __name__ == "__main__":
-    main()
+iface.launch()
