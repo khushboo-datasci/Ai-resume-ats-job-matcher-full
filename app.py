@@ -214,6 +214,6 @@ description="Upload your resume and paste the job description to calculate ATS s
 
 # ------------------ Launch ------------------
 iface.launch(
-server_name="0.0.0.0",
-server_port=int(os.environ.get("PORT", 5000))
+    server_name="0.0.0.0",
+    server_port=7860
 )
