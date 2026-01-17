@@ -1,33 +1,11 @@
-# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Virtual environments
-.venv/
+.Python
 env/
+.venv/
 venv/
-
-# Logs
-*.log
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Build / deployment artifacts
-*.zip
-*.tar.gz
-*.egg-info/
-*.cache/
-
-# Jupyter / IPython
-.ipynb_checkpoints/
-
-# PDF / DOCX uploads (optional, if you don't want to commit example resumes)
-*.pdf
-*.docx
 
 
 
