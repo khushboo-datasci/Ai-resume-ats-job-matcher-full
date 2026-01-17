@@ -7,21 +7,19 @@ import pytesseract
 import spacy
 from difflib import get_close_matches
 
-# SpaCy safe load
+# Safe spaCy model load
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
-    # download only if missing
     from spacy.cli import download
     download("en_core_web_sm")
     nlp = spacy.load("en_core_web_sm")
 
-# Your full resume ATS + job matcher code here
-# (all functions: extract_text_resume_all, extract_keywords_nlp, match_keywords_v2,
+# Your full resume ATS + Gradio functions here
+# extract_text_resume_all, extract_keywords_nlp, match_keywords_v2,
 # match_generic_skills_v2, check_sections_v3, calculate_ats_score_v3,
-# resume_improvement_tips, match_job, get_top_jobs...)
+# resume_improvement_tips, match_job, get_top_jobs, resume_ats_job_matcher
 
-# Gradio Interface
 iface = gr.Interface(
     fn=resume_ats_job_matcher,
     inputs=[gr.File(label="Upload Resume (PDF/DOCX)"),
