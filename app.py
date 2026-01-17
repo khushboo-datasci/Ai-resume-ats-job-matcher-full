@@ -1,107 +1,139 @@
 import gradio as gr
 import pdfplumber
 from docx import Document
+from pdf2image import convert_from_path
+import pytesseract
+import spacy
 import re
 
-# ---------------- SKILLS ----------------
+# Load spaCy
+nlp = spacy.load("en_core_web_sm")
+
+# ------------------ CONFIG ------------------
 GENERIC_SKILLS = [
-    "communication","teamwork","leadership","problem solving","critical thinking",
-    "time management","adaptability","creativity","customer service",
-    "sales","marketing","python","sql","excel","machine learning","data analysis"
+    "communication","teamwork","leadership","problem solving",
+    "customer service","sql","python","excel",
+    "data analysis","sales","marketing","machine learning"
 ]
 
 JOBS = [
-    {"title":"Customer Support Executive","description":"chat support customer service communication","location":"Jaipur"},
-    {"title":"Marketing Executive","description":"marketing content communication reporting","location":"Mumbai"},
-    {"title":"Data Analyst","description":"data analysis python sql excel","location":"Bangalore"},
-    {"title":"Sales Executive","description":"sales communication crm","location":"Jaipur"}
+    {"title":"Customer Support Executive","location":"Jaipur",
+     "keywords":["chat","support","customer","crm","communication"]},
+
+    {"title":"Data Analyst","location":"Bangalore",
+     "keywords":["sql","python","excel","data","analysis"]},
+
+    {"title":"Marketing Executive","location":"Mumbai",
+     "keywords":["marketing","campaign","content","sales"]}
 ]
 
-# ---------------- TEXT EXTRACTION ----------------
-def extract_text_resume(file):
+# ------------------ TEXT EXTRACTION ------------------
+def extract_text(file):
     text = ""
-    name = file.name.lower()
 
-    try:
-        if name.endswith(".pdf"):
-            with pdfplumber.open(file) as pdf:
-                for page in pdf.pages:
-                    t = page.extract_text()
-                    if t:
-                        text += t + " "
-        elif name.endswith(".docx"):
-            doc = Document(file)
-            for p in doc.paragraphs:
-                text += p.text + " "
-    except:
-        pass
+    if file.name.endswith(".pdf"):
+        with pdfplumber.open(file) as pdf:
+            for page in pdf.pages:
+                if page.extract_text():
+                    text += page.extract_text()
 
-    return text.lower().strip()
+        # OCR fallback
+        if len(text.strip()) < 50:
+            images = convert_from_path(file.name)
+            for img in images:
+                text += pytesseract.image_to_string(img)
 
-# ---------------- CLEAN + KEYWORDS ----------------
-def clean(text):
-    return re.sub(r'[^a-zA-Z0-9 ]', '', text.lower())
+    elif file.name.endswith(".docx"):
+        doc = Document(file)
+        for p in doc.paragraphs:
+            text += p.text + "\n"
 
-def keywords(text):
-    return set(clean(text).split())
+    return text.strip()
 
-# ---------------- ATS LOGIC ----------------
-def ats_score(resume_text, job_text):
-    resume_kw = keywords(resume_text)
-    job_kw = keywords(job_text)
-
-    matched = resume_kw & job_kw
-
-    skill_match = [s for s in GENERIC_SKILLS if s in resume_text]
-
-    score = (
-        (len(matched)/max(len(job_kw),1))*60 +
-        (len(skill_match)/len(GENERIC_SKILLS))*40
+# ------------------ KEYWORDS ------------------
+def get_keywords(text):
+    doc = nlp(text.lower())
+    return set(
+        token.text for token in doc
+        if token.pos_ in ["NOUN","PROPN"] and len(token.text) > 2
     )
 
-    return round(score,2), matched, skill_match, list(job_kw-resume_kw)
+# ------------------ ATS SCORE ------------------
+def ats_score(resume, job_keywords):
+    resume_words = get_keywords(resume)
+    matched = resume_words.intersection(job_keywords)
 
-# ---------------- MAIN ----------------
-def run(resume_file, job_desc, location):
-    resume_text = extract_text_resume(resume_file)
+    score = (len(matched) / max(len(job_keywords),1)) * 100
+    return round(score,2), list(matched), list(job_keywords - resume_words)
+
+# ------------------ IMPROVEMENT TIPS ------------------
+def improve_tips(missing):
+    tips = []
+    if missing:
+        tips.append("Add these missing keywords naturally: " + ", ".join(missing[:8]))
+    tips.append("Use action verbs: Managed, Handled, Improved")
+    tips.append("Quantify results (50+ chats/day, 95% CSAT)")
+    tips.append("Add Skills & Experience sections clearly")
+    return tips
+
+# ------------------ JOB MATCHING ------------------
+def job_match(resume):
+    results = []
+    resume_words = get_keywords(resume)
+
+    for job in JOBS:
+        matched = resume_words.intersection(set(job["keywords"]))
+        score = round(len(matched)/len(job["keywords"])*100,2)
+
+        results.append({
+            "title":job["title"],
+            "location":job["location"],
+            "score":score,
+            "matched":list(matched)
+        })
+
+    return sorted(results, key=lambda x:x["score"], reverse=True)
+
+# ------------------ MAIN FUNCTION ------------------
+def analyze_resume(file, job_desc):
+    resume_text = extract_text(file)
 
     if len(resume_text) < 50:
-        return "❌ Resume text extract nahi ho raha.\nPDF scanned ho sakta hai.\nTry text-based PDF/DOCX."
+        return "❌ Resume text extract nahi ho raha. Image-based PDF ho sakta hai."
 
-    score, matched, skills, missing = ats_score(resume_text, job_desc)
+    job_keywords = get_keywords(job_desc)
+    score, matched, missing = ats_score(resume_text, job_keywords)
 
-    result = f"""
-ATS Score: {score}/100
+    tips = improve_tips(missing)
+    jobs = job_match(resume_text)
+
+    output = f"""
+ATS SCORE: {score}/100
 
 Matched Keywords:
 {matched}
 
-Matched Skills:
-{skills}
-
 Missing Keywords:
-{missing[:15]}
+{missing}
 
-Top Job Matches:
-"""
+IMPROVEMENT TIPS:
+- """ + "\n- ".join(tips) + "\n\nTOP JOB MATCHES:\n"
 
-    for j in JOBS:
-        s,_,_,_ = ats_score(resume_text, j["description"])
-        if location and location.lower() not in j["location"].lower():
-            s *= 0.7
-        result += f"\n• {j['title']} ({j['location']}) → {round(s,2)}"
+    for j in jobs:
+        output += f"\n{j['title']} ({j['location']}) → {j['score']}%\nMatched: {j['matched']}\n"
 
-    return result
+    return output
 
-# ---------------- UI ----------------
-gr.Interface(
-    fn=run,
+# ------------------ GRADIO UI ------------------
+app = gr.Interface(
+    fn=analyze_resume,
     inputs=[
-        gr.File(label="Upload Resume (PDF/DOCX)"),
-        gr.Textbox(label="Job Description"),
-        gr.Textbox(label="Preferred Location (optional)")
+        gr.File(label="Upload Resume (PDF / DOCX)"),
+        gr.Textbox(label="Job Description", lines=5)
     ],
     outputs="text",
-    title="ATS Resume Scanner",
-    description="Public ATS Resume Scanner (Cloud Safe Version)"
-).launch(server_name="0.0.0.0", server_port=8080)
+    title="OCR + ATS Resume Matcher",
+    description="Scans ALL resumes (PDF/DOCX), calculates ATS score, missing keywords, job match & improvement tips"
+)
+
+app.launch(server_name="0.0.0.0", server_port=7860)
