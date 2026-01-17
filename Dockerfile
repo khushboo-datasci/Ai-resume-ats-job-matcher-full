@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 
+# system dependencies
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     poppler-utils \
@@ -11,7 +12,6 @@ COPY requirements.txt .
 
 RUN pip install --upgrade pip
 RUN pip install --use-deprecated=legacy-resolver -r requirements.txt
-RUN python -m spacy download en_core_web_sm
 
 COPY . .
 
