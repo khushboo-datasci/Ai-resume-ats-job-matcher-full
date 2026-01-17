@@ -9,7 +9,7 @@ from difflib import get_close_matches
 # Load spaCy model
 nlp = spacy.load("en_core_web_sm")
 
-# --- Generic Skills ---
+# Generic Skills
 GENERIC_SKILLS = [
     "communication","teamwork","leadership","problem-solving","critical thinking",
     "time management","adaptability","creativity","data analysis","customer service",
@@ -17,7 +17,7 @@ GENERIC_SKILLS = [
     "machine learning","excel","powerpoint","research"
 ]
 
-# --- Sample Jobs Database ---
+# Sample Jobs
 JOBS = [
     {"title": "Customer Support Executive", "description": "Live chat support, customer service, troubleshooting, CRM, communication, multitasking", "location": "Jaipur, Rajasthan"},
     {"title": "Marketing Executive", "description": "Campaign planning, market research, content creation, client communication, reporting", "location": "Mumbai, Maharashtra"},
@@ -30,13 +30,11 @@ def extract_text_resume_all(file):
     text = ""
     filename = file.name if hasattr(file, "name") else file
     if filename.endswith(".pdf"):
-        # Text extraction
         with pdfplumber.open(file) as pdf:
             for page in pdf.pages:
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n"
-        # OCR fallback
         if len(text.strip()) == 0:
             pages = convert_from_path(file)
             for page in pages:
@@ -108,7 +106,7 @@ def calculate_ats_score_v3(resume_text, job_keywords, generic_skills):
     ats_score = section_score + keyword_score + generic_score
     return round(ats_score,2), present_sections, matched_keywords, matched_generic_skills
 
-# --- Missing Keywords + Resume Tips ---
+# --- Missing Keywords + Tips ---
 def find_missing_keywords(resume_text, job_description):
     resume_keywords = set(extract_keywords_nlp(resume_text))
     job_keywords = set(extract_keywords_nlp(job_description))
@@ -124,7 +122,7 @@ def resume_improvement_tips(matched_generic_skills, missing_keywords):
     tips.append("Quantify achievements (e.g., 95% customer satisfaction, 50+ chats/day).")
     return tips
 
-# --- Job Matching Engine ---
+# --- Job Matching ---
 def match_job(resume_text, job, generic_skills, location_filter=None):
     job_keywords = extract_keywords_nlp(job['description'])
     resume_keywords = extract_keywords_nlp(resume_text)
@@ -153,7 +151,7 @@ def get_top_jobs(resume_text, jobs_list, generic_skills, top_n=5, location=None)
     results = sorted(results, key=lambda x: x['score'], reverse=True)
     return results[:top_n]
 
-# --- Gradio Interface ---
+# --- Gradio App ---
 def resume_ats_job_matcher(resume_file, job_description, location_filter=""):
     resume_text = extract_text_resume_all(resume_file)
     if "Unsupported" in resume_text:
@@ -196,7 +194,7 @@ def main():
         title="💼 AI Resume ATS & Job Matcher",
         description="Upload your resume and paste the job description to calculate ATS score, see missing keywords, improvement tips, and top matching jobs."
     )
-    iface.launch(server_name="0.0.0.0", server_port=8080)  # Required for Render
+    iface.launch(server_name="0.0.0.0", server_port=8080)
 
 if __name__ == "__main__":
     main()
