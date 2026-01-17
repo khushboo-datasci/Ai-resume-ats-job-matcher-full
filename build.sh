@@ -1,7 +1,11 @@
 #!/bin/bash
+
+# Upgrade pip
 pip install --upgrade pip
+
+# Install python dependencies
 pip install -r requirements.txt
 
-# Pro plan / Metal build ke liye system packages
-sudo apt-get update
-sudo apt-get install -y tesseract-ocr poppler-utils
+# No need for sudo in Pro/Metal plan
+# tesseract + poppler-utils already available in Metal plan
+echo "✅ Dependencies installed"
