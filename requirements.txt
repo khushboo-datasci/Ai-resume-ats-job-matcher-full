@@ -4,4 +4,3 @@ python-docx
 pytesseract
 pdf2image
 spacy
-difflib
