@@ -3,8 +3,9 @@ import pdfplumber
 from docx import Document
 from pdf2image import convert_from_path
 import pytesseract
+import re
 
-# Generic skills list
+# ---------------- Generic Skills ----------------
 GENERIC_SKILLS = [
     "communication","teamwork","leadership","problem-solving","critical thinking",
     "time management","adaptability","creativity","data analysis","customer service",
@@ -12,7 +13,7 @@ GENERIC_SKILLS = [
     "machine learning","excel","powerpoint","research"
 ]
 
-# Sample jobs database
+# ---------------- Sample Jobs Database ----------------
 JOBS = [
     {"title": "Customer Support Executive", "description": "Live chat support, customer service, troubleshooting, CRM, communication, multitasking", "location": "Jaipur, Rajasthan"},
     {"title": "Marketing Executive", "description": "Campaign planning, market research, content creation, client communication, reporting", "location": "Mumbai, Maharashtra"},
@@ -20,7 +21,7 @@ JOBS = [
     {"title": "Sales Executive", "description": "Lead generation, client communication, CRM, sales reporting, multitasking", "location": "Jaipur, Rajasthan"}
 ]
 
-# ---------------- Extract Text + OCR ----------------
+# ---------------- Helper Functions ----------------
 def extract_text_resume(file):
     text = ""
     filename = file.name if hasattr(file,"name") else file
@@ -46,48 +47,46 @@ def extract_text_resume(file):
         text = f"Error extracting text: {str(e)}"
     return text.lower()
 
-# ---------------- Keyword Extraction ----------------
-def extract_keywords(text):
-    return set([w for w in text.split() if len(w)>1])  # small words included
+def clean_text(text):
+    # Remove punctuation
+    return re.sub(r'[^\w\s]', '', text.lower())
 
-def match_keywords(resume_keywords, job_keywords):
-    return list(resume_keywords & job_keywords)
+def extract_keywords_all(text):
+    text = clean_text(text)
+    return set(text.split())
 
 def match_generic_skills(resume_text):
-    matched = []
-    for skill in GENERIC_SKILLS:
-        if skill.lower() in resume_text:
-            matched.append(skill)
-    return matched
+    return [skill for skill in GENERIC_SKILLS if skill.lower() in resume_text]
 
-# ---------------- ATS Scoring ----------------
 def calculate_ats(resume_text, job_description):
-    resume_keywords = extract_keywords(resume_text)
-    job_keywords = extract_keywords(job_description.lower())
-    matched_keywords = match_keywords(resume_keywords, job_keywords)
-    matched_generic = match_generic_skills(resume_text)
-    
+    resume_text_clean = clean_text(resume_text)
+    job_description_clean = clean_text(job_description)
+
+    resume_keywords = extract_keywords_all(resume_text_clean)
+    job_keywords = extract_keywords_all(job_description_clean)
+
+    matched_keywords = resume_keywords & job_keywords
     keyword_score = len(matched_keywords)/max(len(job_keywords),1)*50
+
+    matched_generic = match_generic_skills(resume_text_clean)
     generic_score = len(matched_generic)/len(GENERIC_SKILLS)*30
-    ats_score = round(keyword_score + generic_score,2)
-    
+
+    ats_score = round(keyword_score + generic_score, 2)
     missing_keywords = list(job_keywords - resume_keywords)
-    
+
     tips = []
     if len(matched_generic) < 5:
         tips.append("Add more soft skills like communication, teamwork, leadership.")
     if missing_keywords:
         tips.append("Include missing job-specific keywords naturally in your experience or skills section.")
     tips.append("Use bullet points with action verbs and quantify achievements.")
-    
+
     return ats_score, matched_keywords, matched_generic, missing_keywords, tips
 
-# ---------------- Job Matching ----------------
 def get_top_jobs(resume_text, location_filter=""):
     results = []
     for job in JOBS:
         score, matched_keywords, matched_generic, _, _ = calculate_ats(resume_text, job['description'])
-        # Location filter
         if location_filter and location_filter.lower() not in job['location'].lower():
             score *= 0.7
         results.append({
@@ -105,11 +104,10 @@ def main(resume_file, job_description, location_filter=""):
     resume_text = extract_text_resume(resume_file)
     if "Unsupported" in resume_text:
         return "Unsupported file format!"
-    
+
     ats_score, matched_keywords, matched_generic, missing_keywords, tips = calculate_ats(resume_text, job_description)
-    
     top_jobs = get_top_jobs(resume_text, location_filter)
-    
+
     result = f"""
 ATS Score: {ats_score}/100
 Matched Job Keywords: {matched_keywords}
