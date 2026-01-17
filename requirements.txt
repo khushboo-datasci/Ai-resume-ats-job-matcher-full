@@ -1,9 +1,7 @@
-gradio==4.44.0
-spacy==3.7.4
+gradio
 pdfplumber
 python-docx
 pytesseract
 pdf2image
-pillow
-numpy
-scikit-learn
+spacy
+difflib
