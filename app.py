@@ -11,6 +11,7 @@ from difflib import get_close_matches
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
+    # download only if missing
     from spacy.cli import download
     download("en_core_web_sm")
     nlp = spacy.load("en_core_web_sm")
