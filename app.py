@@ -34,31 +34,36 @@ JOBS = [
 def extract_resume_text(file):
     text = ""
     try:
+        file_bytes = file.read()
+
         if file.name.endswith(".pdf"):
-            pdf_bytes = file.read()
-            
-            # Extract text from PDF pages
-            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + " "
-            
-            # Always run OCR for better accuracy
-            images = convert_from_bytes(pdf_bytes, dpi=300)
+            # Try text extraction first
+            try:
+                with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                    for page in pdf.pages:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text += page_text + " "
+            except:
+                pass
+
+            # Always run OCR for reliability (scanned + typed)
+            images = convert_from_bytes(file_bytes, dpi=300, fmt="ppm")  # ppm fixes Docker PIL issues
             ocr_text = ""
             for img in images:
                 ocr_text += pytesseract.image_to_string(img, config="--psm 6")
-            
             if len(ocr_text.strip()) > 0:
-                text = ocr_text  # prefer OCR output
+                text = ocr_text
+
         elif file.name.endswith(".docx"):
-            doc = Document(file)
+            doc = Document(io.BytesIO(file_bytes))
             for p in doc.paragraphs:
                 text += p.text + " "
+
     except Exception as e:
         print("Resume extraction error:", e)
         return ""
+
     return text.strip()
 
 # -------------------- NLP KEYWORDS --------------------
