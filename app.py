@@ -5,11 +5,10 @@ from docx import Document
 from pdf2image import convert_from_bytes
 import pytesseract
 import io
-from difflib import get_close_matches
-import spacy
 import re
+import spacy
 
-# -------------------- SET PATH FOR TESSERACT --------------------
+# -------------------- TESSERACT PATH --------------------
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 # -------------------- LOAD SPACY MODEL --------------------
@@ -37,16 +36,22 @@ def extract_resume_text(file):
     try:
         if file.name.endswith(".pdf"):
             pdf_bytes = file.read()
+            
+            # Extract text from PDF pages
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
                 for page in pdf.pages:
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + " "
-            # OCR fallback if text is too small
-            if len(text.strip()) < 50:
-                images = convert_from_bytes(pdf_bytes)
-                for img in images:
-                    text += pytesseract.image_to_string(img)
+            
+            # Always run OCR for better accuracy
+            images = convert_from_bytes(pdf_bytes, dpi=300)
+            ocr_text = ""
+            for img in images:
+                ocr_text += pytesseract.image_to_string(img, config="--psm 6")
+            
+            if len(ocr_text.strip()) > 0:
+                text = ocr_text  # prefer OCR output
         elif file.name.endswith(".docx"):
             doc = Document(file)
             for p in doc.paragraphs:
@@ -102,7 +107,6 @@ def improvement_tips():
 def highlight_skills(text):
     highlighted_text = text
     for skill in GENERIC_SKILLS:
-        # Case-insensitive replacement with bold
         highlighted_text = re.sub(
             rf"\b({skill})\b",
             r"**\1**",
@@ -111,16 +115,28 @@ def highlight_skills(text):
         )
     return highlighted_text
 
+# -------------------- EXTRACT DETECTED SKILLS --------------------
+def extract_detected_skills(text):
+    detected = []
+    text_lower = text.lower()
+    for skill in GENERIC_SKILLS:
+        if skill in text_lower:
+            detected.append(skill.title())
+    if not detected:
+        return "No generic skills detected"
+    return ", ".join(detected)
+
 # -------------------- MAIN APP FUNCTION --------------------
 def resume_ai_app(resume, job_description):
     resume_text = extract_resume_text(resume)
     if len(resume_text) < 30:
-        return "❌ Could not extract text from resume."
+        return "❌ Could not extract text from resume.", "", ""
     
     ats = calculate_ats(resume_text, job_description)
     location = extract_location(resume_text)
     jobs = recommend_jobs(resume_text)
     tips = improvement_tips()
+    skills_detected = extract_detected_skills(resume_text)
     
     output_text = f"""
 ATS Score: {ats}/100
@@ -135,9 +151,8 @@ IMPROVEMENT SUGGESTIONS:
 JOB RECOMMENDATIONS:
 {jobs}
 """
-    # Highlight all generic skills in resume text
     output_text = highlight_skills(output_text)
-    return output_text
+    return output_text, skills_detected, "\n".join(tips)
 
 # -------------------- GRADIO UI --------------------
 iface = gr.Interface(
@@ -146,7 +161,11 @@ iface = gr.Interface(
         gr.File(label="Upload Resume (PDF/DOCX)"),
         gr.Textbox(label="Job Description", lines=6)
     ],
-    outputs=gr.Textbox(label="ATS Report & Job Recommendations", lines=25),
+    outputs=[
+        gr.Textbox(label="ATS Report & Job Recommendations", lines=25),
+        gr.Textbox(label="Detected Skills"),
+        gr.Textbox(label="Improvement Tips")
+    ],
     title="ResumeLens AI – ATS Resume Scanner & Job Matcher",
     description="Upload your resume to get ATS score, job matches, improvement tips, and location detection. Detected skills are highlighted in bold.",
 )
