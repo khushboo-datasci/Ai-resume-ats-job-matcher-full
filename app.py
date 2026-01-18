@@ -1,17 +1,17 @@
 import os
+import io
+import re
 import gradio as gr
 import pdfplumber
 from docx import Document
 from pdf2image import convert_from_bytes
 import pytesseract
-import io
-import re
 import spacy
 
 # Tesseract path
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
-# Load spacy model
+# Load Spacy
 nlp = spacy.load("en_core_web_sm")
 
 # Generic skills
@@ -21,7 +21,7 @@ GENERIC_SKILLS = [
     "python","sql","excel","data analysis","sales","marketing"
 ]
 
-# Sample jobs
+# Sample job DB
 JOBS = [
     {"title": "Customer Support Executive", "location": "Jaipur", "skills": ["customer","chat","support","crm"]},
     {"title": "Data Analyst", "location": "Bangalore", "skills": ["data","sql","python","analysis"]},
@@ -35,52 +35,55 @@ def extract_resume_text(file):
     text = ""
     try:
         file_bytes = file.read()
-        if len(file_bytes) == 0:
-            print("No bytes read from file!")
-            return ""
+        file.seek(0)
+        print(f"[DEBUG] File name: {file.name}, size: {len(file_bytes)} bytes")
 
-        if file.name.endswith(".pdf"):
-            # PDF text extraction
+        # PDF
+        if file.name.lower().endswith(".pdf"):
             try:
                 with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
                     for page in pdf.pages:
                         page_text = page.extract_text()
                         if page_text:
                             text += page_text + " "
+                print(f"[DEBUG] pdfplumber text length: {len(text)}")
             except Exception as e:
-                print("pdfplumber failed:", e)
+                print("[DEBUG] pdfplumber failed:", e)
 
-            # OCR fallback for ALL PDFs
+            # OCR fallback always
             try:
                 images = convert_from_bytes(io.BytesIO(file_bytes), dpi=400, fmt="ppm")
                 ocr_text = ""
                 for img in images:
                     ocr_text += pytesseract.image_to_string(img, config="--psm 6")
+                print(f"[DEBUG] OCR text length: {len(ocr_text)}")
                 if len(ocr_text.strip()) > 0:
                     text = ocr_text
             except Exception as e:
-                print("OCR failed:", e)
+                print("[DEBUG] OCR failed:", e)
 
-        elif file.name.endswith(".docx"):
+        # DOCX
+        elif file.name.lower().endswith(".docx"):
             try:
                 doc = Document(io.BytesIO(file_bytes))
                 for p in doc.paragraphs:
                     text += p.text + " "
+                print(f"[DEBUG] DOCX text length: {len(text)}")
             except Exception as e:
-                print("DOCX failed:", e)
+                print("[DEBUG] DOCX failed:", e)
 
     except Exception as e:
-        print("Resume extraction error:", e)
+        print("[DEBUG] Resume extraction error:", e)
         return ""
 
+    print(f"[DEBUG] Final extracted text length: {len(text)}")
     return text.strip()
 
-# -------------------- NLP KEYWORDS --------------------
+# -------------------- NLP & ATS --------------------
 def extract_keywords(text):
     doc = nlp(text.lower())
     return list(set([t.text for t in doc if t.pos_ in ["NOUN","PROPN"] and len(t.text) > 2]))
 
-# -------------------- LOCATION EXTRACTION --------------------
 def extract_location(text):
     cities = ["jaipur","delhi","bangalore","mumbai","noida","pune","hyderabad","chennai"]
     for city in cities:
@@ -88,7 +91,6 @@ def extract_location(text):
             return city.title()
     return "Not mentioned"
 
-# -------------------- ATS SCORE --------------------
 def calculate_ats(resume_text, jd):
     resume_keywords = extract_keywords(resume_text)
     jd_keywords = extract_keywords(jd)
@@ -97,7 +99,6 @@ def calculate_ats(resume_text, jd):
     length_score = 30 if len(resume_text.split()) > 150 else 15
     return keyword_score + skill_score + length_score
 
-# -------------------- JOB RECOMMENDATION --------------------
 def recommend_jobs(resume_text):
     resume_text_lower = resume_text.lower()
     recommended = []
@@ -105,11 +106,8 @@ def recommend_jobs(resume_text):
         match_count = sum(1 for skill in job["skills"] if skill in resume_text_lower)
         if match_count > 0:
             recommended.append(f"{job['title']} ({job['location']})")
-    if not recommended:
-        return "No matching jobs found"
-    return "\n".join(recommended)
+    return "\n".join(recommended) if recommended else "No matching jobs found"
 
-# -------------------- IMPROVEMENT TIPS --------------------
 def improvement_tips():
     return [
         "Add more job-specific keywords",
@@ -117,7 +115,6 @@ def improvement_tips():
         "Enhance skills section with tools & platforms you know"
     ]
 
-# -------------------- HIGHLIGHT SKILLS --------------------
 def highlight_skills(text):
     highlighted_text = text
     for skill in GENERIC_SKILLS:
@@ -129,18 +126,11 @@ def highlight_skills(text):
         )
     return highlighted_text
 
-# -------------------- EXTRACT DETECTED SKILLS --------------------
 def extract_detected_skills(text):
-    detected = []
-    text_lower = text.lower()
-    for skill in GENERIC_SKILLS:
-        if skill in text_lower:
-            detected.append(skill.title())
-    if not detected:
-        return "No generic skills detected"
-    return ", ".join(detected)
+    detected = [s.title() for s in GENERIC_SKILLS if s in text.lower()]
+    return ", ".join(detected) if detected else "No generic skills detected"
 
-# -------------------- MAIN APP FUNCTION --------------------
+# -------------------- MAIN APP --------------------
 def resume_ai_app(resume, job_description):
     resume_text = extract_resume_text(resume)
     if len(resume_text) < 30:
@@ -184,6 +174,5 @@ iface = gr.Interface(
     description="Upload your resume to get ATS score, job matches, improvement tips, and location detection. Detected skills are highlighted in bold.",
 )
 
-# Launch
 port = int(os.environ.get("PORT", 7860))
 iface.launch(server_name="0.0.0.0", server_port=port, share=False, debug=True)
