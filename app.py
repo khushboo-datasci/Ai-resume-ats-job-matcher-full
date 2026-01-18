@@ -1,213 +1,167 @@
-import os, re, tempfile
 import gradio as gr
-import pdfplumber, pytesseract
-from pdf2image import convert_from_path
+import pdfplumber
+import pytesseract
+from pdf2image import convert_from_bytes
 from docx import Document
+import re
+import nltk
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 
-# -----------------------------
-# Utilities
-# -----------------------------
-def clean_text(text):
-    text = text.lower()
-    text = re.sub(r"[^a-z\s]", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+nltk.download("punkt")
 
-
-# -----------------------------
-# OCR
-# -----------------------------
-def ocr_pdf(path):
-    text = ""
-    images = convert_from_path(path)
-    for img in images:
-        text += pytesseract.image_to_string(img)
-    return text
-
-
-# -----------------------------
+# -------------------------------
 # Resume Text Extraction
-# -----------------------------
-def extract_resume_text(file):
+# -------------------------------
+def extract_text(file):
     text = ""
 
     if file.name.endswith(".pdf"):
-        try:
-            with pdfplumber.open(file) as pdf:
-                for page in pdf.pages:
-                    if page.extract_text():
-                        text += page.extract_text() + " "
-        except:
-            pass
+        with pdfplumber.open(file) as pdf:
+            for page in pdf.pages:
+                if page.extract_text():
+                    text += page.extract_text() + "\n"
 
+        # OCR fallback
         if len(text.strip()) < 50:
-            text = ocr_pdf(file.name)
+            images = convert_from_bytes(file.read())
+            for img in images:
+                text += pytesseract.image_to_string(img)
 
     elif file.name.endswith(".docx"):
         doc = Document(file)
         for p in doc.paragraphs:
-            text += p.text + " "
+            text += p.text + "\n"
 
     return text.strip()
 
 
-# -----------------------------
+# -------------------------------
 # Location Extraction
-# -----------------------------
-LOCATIONS = [
-    "delhi","mumbai","bangalore","hyderabad","chennai",
-    "pune","kolkata","jaipur","ahmedabad","noida","gurgaon"
-]
-
+# -------------------------------
 def extract_location(text):
-    for loc in LOCATIONS:
-        if loc in text:
-            return loc.title()
+    locations = [
+        "Delhi", "Mumbai", "Bangalore", "Hyderabad",
+        "Chennai", "Pune", "Jaipur", "Noida", "Gurgaon",
+        "Rajasthan", "Karnataka", "Maharashtra"
+    ]
+    for loc in locations:
+        if loc.lower() in text.lower():
+            return loc
     return "Not Mentioned"
 
 
-# -----------------------------
-# ATS Score
-# -----------------------------
-def calculate_ats(resume, jd):
+# -------------------------------
+# ATS & Job Matching
+# -------------------------------
+def ats_analyze(resume, job_desc):
+    resume = resume.lower()
+    job_desc = job_desc.lower()
+
     vectorizer = TfidfVectorizer(stop_words="english")
-    vectors = vectorizer.fit_transform([resume, jd])
-    score = cosine_similarity(vectors[0:1], vectors[1:2])[0][0] * 100
+    vectors = vectorizer.fit_transform([resume, job_desc])
 
+    score = cosine_similarity(vectors[0:1], vectors[1:2])[0][0]
+    ats_score = round(score * 100, 2)
+
+    job_words = set(job_desc.split())
     resume_words = set(resume.split())
-    jd_words = set(jd.split())
 
-    return round(score, 2), resume_words & jd_words, jd_words - resume_words
+    matched = job_words & resume_words
+    missing = job_words - resume_words
 
-
-# -----------------------------
-# AI Resume Rewrite (Offline)
-# -----------------------------
-def ai_rewrite_resume(text):
-    lines = text.split("\n")
-    improved = []
-    for line in lines:
-        line = line.strip()
-        if len(line) < 3:
-            continue
-        line = line.replace("Responsible for", "Successfully handled")
-        line = line.replace("Worked on", "Contributed to")
-        line = line.replace("Helped", "Assisted and improved")
-        improved.append("• " + line if len(line.split()) > 5 else line)
-    return "\n".join(improved)
+    return ats_score, matched, missing
 
 
-# -----------------------------
+# -------------------------------
+# Resume Improvement
+# -------------------------------
+def improve_resume(missing):
+    tips = [
+        "Add missing job-specific keywords naturally in your experience section.",
+        "Quantify achievements (example: resolved 50+ tickets daily).",
+        "Add technical tools, soft skills, and certifications.",
+        "Use strong action verbs and bullet points."
+    ]
+
+    improved = "IMPROVEMENT SUGGESTIONS:\n"
+    for t in tips:
+        improved += "- " + t + "\n"
+
+    return improved
+
+
+# -------------------------------
 # Job Recommendations
-# -----------------------------
-JOBS = [
-    ("Customer Support Executive", "Jaipur"),
-    ("Data Analyst", "Bangalore"),
-    ("HR Executive", "Delhi"),
-    ("Marketing Executive", "Mumbai"),
-    ("Sales Executive", "Noida")
-]
+# -------------------------------
+def recommend_jobs(resume_text):
+    jobs = [
+        ("Customer Support Executive", "Jaipur"),
+        ("Data Analyst", "Bangalore"),
+        ("HR Executive", "Delhi"),
+        ("Marketing Executive", "Mumbai"),
+        ("Sales Executive", "Noida")
+    ]
 
-def recommend_jobs(score, location):
-    results = []
-    for job, loc in JOBS:
-        loc_score = 15 if location.lower() in loc.lower() else 0
-        results.append(f"{job} ({loc}) — Match Score: {round(score*0.7+loc_score,2)}")
-    return "\n".join(results)
+    recommendations = []
+    for job, loc in jobs:
+        recommendations.append(f"{job} ({loc})")
 
-
-# -----------------------------
-# PDF Generator
-# -----------------------------
-def generate_pdf(text):
-    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    c = canvas.Canvas(temp.name, pagesize=A4)
-    width, height = A4
-    y = height - 40
-
-    for line in text.split("\n"):
-        if y < 40:
-            c.showPage()
-            y = height - 40
-        c.drawString(40, y, line[:100])
-        y -= 14
-
-    c.save()
-    return temp.name
+    return "\n".join(recommendations)
 
 
-# -----------------------------
-# Main Function
-# -----------------------------
-def analyze_resume(resume_file, jd):
-    if not resume_file or not jd.strip():
-        return "❌ Upload resume & job description", "", "", None
+# -------------------------------
+# Main App Logic
+# -------------------------------
+def analyze(resume_file, job_desc):
+    resume_text = extract_text(resume_file)
 
-    resume = extract_resume_text(resume_file)
-    if len(resume) < 50:
-        return "❌ Resume text could not be extracted", "", "", None
+    if not resume_text:
+        return "❌ Resume text could not be extracted."
 
-    resume_c = clean_text(resume)
-    jd_c = clean_text(jd)
+    location = extract_location(resume_text)
+    ats_score, matched, missing = ats_analyze(resume_text, job_desc)
+    improvements = improve_resume(missing)
+    jobs = recommend_jobs(resume_text)
 
-    score, matched, missing = calculate_ats(resume_c, jd_c)
-    location = extract_location(resume_c)
+    clean_resume = resume_text.replace("\n", " ")
 
-    tips = []
-    if score < 40:
-        tips.append("Add more job-specific keywords from the job description.")
-    if score < 60:
-        tips.append("Quantify your experience with measurable results.")
-    if score < 80:
-        tips.append("Strengthen your skills section with relevant keywords.")
-    if score >= 80:
-        tips.append("Your resume is ATS-friendly and optimized.")
+    output = f"""
+ATS SCORE: {ats_score}/100
 
-    rewritten = ai_rewrite_resume(resume)
-    final_resume = rewritten + "\n\nIMPROVEMENT SUGGESTIONS:\n- " + "\n- ".join(tips)
+Location Detected: {location}
 
-    pdf_path = generate_pdf(final_resume)
+Matched Keywords:
+{', '.join(list(matched)) if matched else 'None'}
 
-    result = f"""
-### ✅ ATS Score: {score}/100
-**📍 Location Detected:** {location}
+Missing Keywords:
+{', '.join(list(missing)) if missing else 'None'}
 
-**✔ Matched Keywords:** {list(matched)[:15]}  
-**❌ Missing Keywords:** {list(missing)[:15]}
+{improvements}
 
-### ✍ Suggestions:
-- {"\n- ".join(tips)}
+TOP JOB MATCHES:
+{jobs}
+
+IMPROVED RESUME TEXT:
+{clean_resume}
 """
 
-    return result, recommend_jobs(score, location), final_resume, pdf_path
+    return output
 
 
-# -----------------------------
-# UI
-# -----------------------------
-ui = gr.Interface(
-    fn=analyze_resume,
+# -------------------------------
+# Gradio UI
+# -------------------------------
+app = gr.Interface(
+    fn=analyze,
     inputs=[
-        gr.File(label="Upload Resume (PDF / DOCX / Scanned PDF)"),
-        gr.Textbox(label="Job Description", lines=6)
+        gr.File(label="Upload Resume (PDF/DOCX)"),
+        gr.Textbox(label="Job Description", lines=5)
     ],
-    outputs=[
-        gr.Markdown(label="ATS Analysis"),
-        gr.Textbox(label="Job Recommendations", lines=6),
-        gr.Textbox(label="AI Rewritten Resume", lines=25),
-        gr.File(label="Download Improved Resume (PDF)")
-    ],
-    title="ResumeIQ – AI ATS Resume Scanner & Improver",
-    description="Scan any resume • ATS score • AI rewrite • Job match • PDF download"
+    outputs=gr.Textbox(label="ATS Analysis Report", lines=30),
+    title="ResumeIQ – ATS & Job Match Analyzer",
+    description="Upload resume & job description to get ATS score, missing skills, job matches, and improvement tips."
 )
 
-# -----------------------------
-# Railway Compatible Launch
-# -----------------------------
-ui.launch(
-    server_name="0.0.0.0",
-    server_port=int(os.environ.get("PORT", 7860))
-)
+if __name__ == "__main__":
+    app.launch(server_name="0.0.0.0", server_port=8080)
