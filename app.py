@@ -3,12 +3,19 @@ import pdfplumber
 from docx import Document
 from pdf2image import convert_from_bytes
 import pytesseract
-import spacy
 import io
-import re
+import subprocess
+import sys
 from difflib import get_close_matches
 
-# -------------------- LOAD NLP MODEL --------------------
+# -------------------- INSTALL SPACY MODEL --------------------
+try:
+    import en_core_web_sm
+except ImportError:
+    subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
+
+import spacy
+
 nlp = spacy.load("en_core_web_sm")
 
 # -------------------- GENERIC SKILLS --------------------
@@ -30,7 +37,6 @@ JOBS = [
 # -------------------- RESUME TEXT EXTRACTION --------------------
 def extract_resume_text(file):
     text = ""
-
     try:
         if file.name.endswith(".pdf"):
             pdf_bytes = file.read()
