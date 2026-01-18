@@ -5,3 +5,4 @@ scikit-learn
 pytesseract
 pdf2image
 Pillow
+reportlab
