@@ -1,3 +1,4 @@
+import os
 import gradio as gr
 import pdfplumber
 from docx import Document
