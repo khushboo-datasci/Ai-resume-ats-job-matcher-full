@@ -4,18 +4,10 @@ from docx import Document
 from pdf2image import convert_from_bytes
 import pytesseract
 import io
-import subprocess
-import sys
 from difflib import get_close_matches
-
-# -------------------- INSTALL SPACY MODEL --------------------
-try:
-    import en_core_web_sm
-except ImportError:
-    subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
-
 import spacy
 
+# -------------------- LOAD SPACY MODEL --------------------
 nlp = spacy.load("en_core_web_sm")
 
 # -------------------- GENERIC SKILLS --------------------
@@ -40,29 +32,24 @@ def extract_resume_text(file):
     try:
         if file.name.endswith(".pdf"):
             pdf_bytes = file.read()
-
             # Text-based PDF
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
                 for page in pdf.pages:
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + " "
-
-            # OCR fallback if text too short
+            # OCR fallback
             if len(text.strip()) < 50:
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
                     text += pytesseract.image_to_string(img)
-
         elif file.name.endswith(".docx"):
             doc = Document(file)
             for p in doc.paragraphs:
                 text += p.text + " "
-
     except Exception as e:
         print("Resume extraction error:", e)
         return ""
-
     return text.strip()
 
 # -------------------- NLP KEYWORDS --------------------
@@ -82,13 +69,10 @@ def extract_location(text):
 def calculate_ats(resume_text, jd):
     resume_keywords = extract_keywords(resume_text)
     jd_keywords = extract_keywords(jd)
-
     matched = get_close_matches(" ".join(jd_keywords), resume_keywords, cutoff=0.4)
-
     keyword_score = min(len(set(resume_keywords) & set(jd_keywords)) * 3, 40)
     skill_score = min(sum(1 for s in GENERIC_SKILLS if s in resume_text.lower()) * 2, 30)
     length_score = 30 if len(resume_text.split()) > 150 else 15
-
     return keyword_score + skill_score + length_score
 
 # -------------------- JOB RECOMMENDATION --------------------
@@ -114,15 +98,12 @@ def improvement_tips():
 # -------------------- MAIN APP FUNCTION --------------------
 def resume_ai_app(resume, job_description):
     resume_text = extract_resume_text(resume)
-
     if len(resume_text) < 30:
         return "❌ Could not extract text from resume."
-
     ats = calculate_ats(resume_text, job_description)
     location = extract_location(resume_text)
     jobs = recommend_jobs(resume_text)
     tips = improvement_tips()
-
     return f"""
 ATS Score: {ats}/100
 
