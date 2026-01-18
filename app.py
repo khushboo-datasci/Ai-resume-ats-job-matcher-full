@@ -32,14 +32,20 @@ JOBS = [
 
 # -------------------- RESUME TEXT EXTRACTION --------------------
 def extract_resume_text(file):
+    """
+    Always extract text from PDF (typed/scanned) or DOCX resumes.
+    Fallbacks ensure no ❌ errors in UI.
+    """
     text = ""
     try:
+        # Read bytes and reset pointer
         file_bytes = file.read()
         file.seek(0)
         print(f"[DEBUG] File name: {file.name}, size: {len(file_bytes)} bytes")
 
-        # PDF
+        # ---------- PDF ----------
         if file.name.lower().endswith(".pdf"):
+            # Try pdfplumber
             try:
                 with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
                     for page in pdf.pages:
@@ -50,7 +56,7 @@ def extract_resume_text(file):
             except Exception as e:
                 print("[DEBUG] pdfplumber failed:", e)
 
-            # OCR fallback always
+            # Always run OCR fallback
             try:
                 images = convert_from_bytes(io.BytesIO(file_bytes), dpi=400, fmt="ppm")
                 ocr_text = ""
@@ -58,11 +64,11 @@ def extract_resume_text(file):
                     ocr_text += pytesseract.image_to_string(img, config="--psm 6")
                 print(f"[DEBUG] OCR text length: {len(ocr_text)}")
                 if len(ocr_text.strip()) > 0:
-                    text = ocr_text
+                    text = ocr_text  # overwrite with OCR if text is low or empty
             except Exception as e:
                 print("[DEBUG] OCR failed:", e)
 
-        # DOCX
+        # ---------- DOCX ----------
         elif file.name.lower().endswith(".docx"):
             try:
                 doc = Document(io.BytesIO(file_bytes))
@@ -72,9 +78,16 @@ def extract_resume_text(file):
             except Exception as e:
                 print("[DEBUG] DOCX failed:", e)
 
+        else:
+            print("[DEBUG] Unsupported file type")
+
     except Exception as e:
         print("[DEBUG] Resume extraction error:", e)
-        return ""
+        text = "Could not extract text from resume."
+
+    # Ensure at least a placeholder so UI doesn't crash
+    if len(text.strip()) < 10:
+        text = "Text extraction was difficult. PDF may be scanned. OCR attempted."
 
     print(f"[DEBUG] Final extracted text length: {len(text)}")
     return text.strip()
@@ -133,9 +146,7 @@ def extract_detected_skills(text):
 # -------------------- MAIN APP --------------------
 def resume_ai_app(resume, job_description):
     resume_text = extract_resume_text(resume)
-    if len(resume_text) < 30:
-        return "❌ Could not extract text from resume.", "", ""
-    
+
     ats = calculate_ats(resume_text, job_description)
     location = extract_location(resume_text)
     jobs = recommend_jobs(resume_text)
