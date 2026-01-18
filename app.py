@@ -7,6 +7,10 @@ import pytesseract
 import io
 from difflib import get_close_matches
 import spacy
+import re
+
+# -------------------- SET PATH FOR TESSERACT --------------------
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 # -------------------- LOAD SPACY MODEL --------------------
 nlp = spacy.load("en_core_web_sm")
@@ -33,13 +37,12 @@ def extract_resume_text(file):
     try:
         if file.name.endswith(".pdf"):
             pdf_bytes = file.read()
-            # Text-based PDF
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
                 for page in pdf.pages:
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + " "
-            # OCR fallback
+            # OCR fallback if text is too small
             if len(text.strip()) < 50:
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
@@ -70,7 +73,6 @@ def extract_location(text):
 def calculate_ats(resume_text, jd):
     resume_keywords = extract_keywords(resume_text)
     jd_keywords = extract_keywords(jd)
-    matched = get_close_matches(" ".join(jd_keywords), resume_keywords, cutoff=0.4)
     keyword_score = min(len(set(resume_keywords) & set(jd_keywords)) * 3, 40)
     skill_score = min(sum(1 for s in GENERIC_SKILLS if s in resume_text.lower()) * 2, 30)
     length_score = 30 if len(resume_text.split()) > 150 else 15
@@ -92,20 +94,35 @@ def recommend_jobs(resume_text):
 def improvement_tips():
     return [
         "Add more job-specific keywords",
-        "Quantify experience with numbers",
-        "Improve skills section with tools & platforms"
+        "Quantify your experience with numbers",
+        "Enhance skills section with tools & platforms you know"
     ]
+
+# -------------------- HIGHLIGHT SKILLS --------------------
+def highlight_skills(text):
+    highlighted_text = text
+    for skill in GENERIC_SKILLS:
+        # Case-insensitive replacement with bold
+        highlighted_text = re.sub(
+            rf"\b({skill})\b",
+            r"**\1**",
+            highlighted_text,
+            flags=re.IGNORECASE
+        )
+    return highlighted_text
 
 # -------------------- MAIN APP FUNCTION --------------------
 def resume_ai_app(resume, job_description):
     resume_text = extract_resume_text(resume)
     if len(resume_text) < 30:
         return "❌ Could not extract text from resume."
+    
     ats = calculate_ats(resume_text, job_description)
     location = extract_location(resume_text)
     jobs = recommend_jobs(resume_text)
     tips = improvement_tips()
-    return f"""
+    
+    output_text = f"""
 ATS Score: {ats}/100
 
 Detected Location: {location}
@@ -118,17 +135,20 @@ IMPROVEMENT SUGGESTIONS:
 JOB RECOMMENDATIONS:
 {jobs}
 """
+    # Highlight all generic skills in resume text
+    output_text = highlight_skills(output_text)
+    return output_text
 
 # -------------------- GRADIO UI --------------------
 iface = gr.Interface(
     fn=resume_ai_app,
     inputs=[
         gr.File(label="Upload Resume (PDF/DOCX)"),
-        gr.Textbox(label="Job Description", lines=4)
+        gr.Textbox(label="Job Description", lines=6)
     ],
-    outputs="text",
+    outputs=gr.Textbox(label="ATS Report & Job Recommendations", lines=25),
     title="ResumeLens AI – ATS Resume Scanner & Job Matcher",
-    description="Upload your resume to get ATS score, job matches, improvement tips & location detection."
+    description="Upload your resume to get ATS score, job matches, improvement tips, and location detection. Detected skills are highlighted in bold.",
 )
 
 # -------------------- LAUNCH --------------------
