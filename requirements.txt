@@ -1,8 +1,8 @@
-gradio==4.15.0
-pdfplumber
-python-docx
+gradio==3.50.2
+pdfplumber==0.10.3
+python-docx==1.1.2
 pytesseract
-pdf2image
+Pillow
 spacy
-pillow
-reportlab
+scikit-learn
+numpy
