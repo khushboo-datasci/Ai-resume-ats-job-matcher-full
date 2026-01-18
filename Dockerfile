@@ -1,10 +1,12 @@
+# Start with Python 3.11 base
 FROM python:3.11-slim
 
-# System dependencies for OCR
+# Install system dependencies for PDF text extraction / OCR
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     poppler-utils \
-    build-essential \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
