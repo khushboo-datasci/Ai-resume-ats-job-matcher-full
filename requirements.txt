@@ -1,8 +1,8 @@
-gradio
+gradio==3.50.2
 pdfplumber
 python-docx
-scikit-learn
 pytesseract
-pdf2image
 Pillow
-reportlab
+pdf2image
+nltk
+scikit-learn
