@@ -27,7 +27,7 @@ JOBS = [
     {"title": "Sales Executive", "location": "Noida", "skills": ["sales","client","crm"]}
 ]
 
-# -------------------- RESUME TEXT EXTRACTION (FINAL FIX) --------------------
+# -------------------- RESUME TEXT EXTRACTION --------------------
 def extract_resume_text(file):
     text = ""
 
@@ -35,14 +35,14 @@ def extract_resume_text(file):
         if file.name.endswith(".pdf"):
             pdf_bytes = file.read()
 
-            # Text based PDF
+            # Text-based PDF
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
                 for page in pdf.pages:
                     page_text = page.extract_text()
                     if page_text:
                         text += page_text + " "
 
-            # OCR fallback
+            # OCR fallback if text too short
             if len(text.strip()) < 50:
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
@@ -85,31 +85,17 @@ def calculate_ats(resume_text, jd):
 
     return keyword_score + skill_score + length_score
 
-# -------------------- JOB MATCHING --------------------
-def resume_ai_app(resume, job_description):
-    resume_text = extract_resume_text(resume)
-
-    if len(resume_text) < 30:
-        return "❌ Could not extract text from resume."
-
-    ats = calculate_ats(resume_text, job_description)
-    location = extract_location(resume_text)
-    jobs = recommend_jobs(resume_text)   
-    tips = improvement_tips()
-
-    return f"""
-ATS Score: {ats}/100
-
-Detected Location: {location}
-
-IMPROVEMENT SUGGESTIONS:
-- {tips[0]}
-- {tips[1]}
-- {tips[2]}
-
-JOB RECOMMENDATIONS:
-{jobs}
-"""
+# -------------------- JOB RECOMMENDATION --------------------
+def recommend_jobs(resume_text):
+    resume_text_lower = resume_text.lower()
+    recommended = []
+    for job in JOBS:
+        match_count = sum(1 for skill in job["skills"] if skill in resume_text_lower)
+        if match_count > 0:
+            recommended.append(f"{job['title']} ({job['location']})")
+    if not recommended:
+        return "No matching jobs found"
+    return "\n".join(recommended)
 
 # -------------------- IMPROVEMENT TIPS --------------------
 def improvement_tips():
@@ -119,7 +105,7 @@ def improvement_tips():
         "Improve skills section with tools & platforms"
     ]
 
-# -------------------- GRADIO FUNCTION --------------------
+# -------------------- MAIN APP FUNCTION --------------------
 def resume_ai_app(resume, job_description):
     resume_text = extract_resume_text(resume)
 
@@ -150,36 +136,12 @@ iface = gr.Interface(
     fn=resume_ai_app,
     inputs=[
         gr.File(label="Upload Resume (PDF/DOCX)"),
-        gr.Textbox(label="Job Description")
+        gr.Textbox(label="Job Description", lines=4)
     ],
     outputs="text",
     title="ResumeLens AI – ATS Resume Scanner & Job Matcher",
     description="Upload your resume to get ATS score, job matches, improvement tips & location detection."
 )
 
+# -------------------- LAUNCH --------------------
 iface.launch(server_name="0.0.0.0", server_port=7860)
-
-jobs = recommend_jobs(resume_text)
-
-    return result, jobs, "\n".join(tips)
-
-# Gradio UI
-ui = gr.Interface(
-    fn=analyze_resume,
-    inputs=[
-        gr.File(label="Upload Resume (PDF / DOCX / Scanned PDF)"),
-        gr.Textbox(label="Job Description", lines=4)
-    ],
-    outputs=[
-        gr.Textbox(label="ATS Report"),
-        gr.Textbox(label="Job Recommendations"),
-        gr.Textbox(label="Tips")
-    ],
-    title="ResumeIQ – ATS Resume Analyzer",
-    description="Upload any resume and job description to get ATS score, job recommendations and improvement tips."
-)
-
-ui.launch(
-    server_name="0.0.0.0",
-    server_port=int(os.environ.get("PORT", 7860))
-)
