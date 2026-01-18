@@ -86,15 +86,30 @@ def calculate_ats(resume_text, jd):
     return keyword_score + skill_score + length_score
 
 # -------------------- JOB MATCHING --------------------
-def recommend_jobs(resume_text):
-    results = []
-    resume_words = set(resume_text.lower().split())
+def resume_ai_app(resume, job_description):
+    resume_text = extract_resume_text(resume)
 
-    for job in JOBS:
-        match = len(resume_words & set(job["skills"])) * 5
-        results.append(f"{job['title']} ({job['location']}) - Match Score: {match}")
+    if len(resume_text) < 30:
+        return "❌ Could not extract text from resume."
 
-    return "\n".join(results)
+    ats = calculate_ats(resume_text, job_description)
+    location = extract_location(resume_text)
+    jobs = recommend_jobs(resume_text)   
+    tips = improvement_tips()
+
+    return f"""
+ATS Score: {ats}/100
+
+Detected Location: {location}
+
+IMPROVEMENT SUGGESTIONS:
+- {tips[0]}
+- {tips[1]}
+- {tips[2]}
+
+JOB RECOMMENDATIONS:
+{jobs}
+"""
 
 # -------------------- IMPROVEMENT TIPS --------------------
 def improvement_tips():
