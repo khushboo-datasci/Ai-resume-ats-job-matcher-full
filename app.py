@@ -37,28 +37,34 @@ def extract_resume_text(file):
         file_bytes = file.read()
 
         if file.name.endswith(".pdf"):
-            # Try text extraction first
+            # Attempt text extraction via pdfplumber
             try:
                 with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
                     for page in pdf.pages:
                         page_text = page.extract_text()
                         if page_text:
                             text += page_text + " "
-            except:
-                pass
+            except Exception as e:
+                print("pdfplumber failed:", e)
 
-            # Always run OCR for reliability (scanned + typed)
-            images = convert_from_bytes(file_bytes, dpi=300, fmt="ppm")  # ppm fixes Docker PIL issues
-            ocr_text = ""
-            for img in images:
-                ocr_text += pytesseract.image_to_string(img, config="--psm 6")
-            if len(ocr_text.strip()) > 0:
-                text = ocr_text
+            # OCR fallback for ALL PDFs (scanned or typed)
+            try:
+                images = convert_from_bytes(io.BytesIO(file_bytes), dpi=400, fmt="ppm")
+                ocr_text = ""
+                for img in images:
+                    ocr_text += pytesseract.image_to_string(img, config="--psm 6")
+                if len(ocr_text.strip()) > 0:
+                    text = ocr_text
+            except Exception as e:
+                print("OCR failed:", e)
 
         elif file.name.endswith(".docx"):
-            doc = Document(io.BytesIO(file_bytes))
-            for p in doc.paragraphs:
-                text += p.text + " "
+            try:
+                doc = Document(io.BytesIO(file_bytes))
+                for p in doc.paragraphs:
+                    text += p.text + " "
+            except Exception as e:
+                print("DOCX failed:", e)
 
     except Exception as e:
         print("Resume extraction error:", e)
@@ -167,9 +173,9 @@ iface = gr.Interface(
         gr.Textbox(label="Job Description", lines=6)
     ],
     outputs=[
-        gr.Textbox(label="ATS Report & Job Recommendations", lines=25),
-        gr.Textbox(label="Detected Skills"),
-        gr.Textbox(label="Improvement Tips")
+        gr.Textbox(label="ATS Report & Job Recommendations", lines=20),
+        gr.Textbox(label="Detected Skills", lines=15),
+        gr.Textbox(label="Improvement Tips", lines=15)
     ],
     title="ResumeLens AI – ATS Resume Scanner & Job Matcher",
     description="Upload your resume to get ATS score, job matches, improvement tips, and location detection. Detected skills are highlighted in bold.",
