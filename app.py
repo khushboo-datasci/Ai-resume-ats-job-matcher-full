@@ -1,147 +1,93 @@
 import gradio as gr
 import pdfplumber
-from docx import Document
-from pdf2image import convert_from_path
 import pytesseract
-import spacy
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4
-import tempfile
+from PIL import Image
+import docx
+import re
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-# Load spaCy model
-nlp = spacy.load("en_core_web_sm")
-
-# Generic skills
-GENERIC_SKILLS = [
-    "communication","teamwork","leadership","customer service",
-    "problem solving","sql","python","excel","data analysis",
-    "sales","marketing"
-]
-
-# Sample job database
-JOBS = [
-    {"title":"Customer Support Executive","location":"Jaipur",
-     "keywords":["chat","support","customer","crm","communication"]},
-
-    {"title":"Data Analyst","location":"Bangalore",
-     "keywords":["sql","python","excel","data","analysis"]},
-
-    {"title":"Marketing Executive","location":"Mumbai",
-     "keywords":["marketing","campaign","content","sales"]}
-]
-
-# ------------------ Text Extraction ------------------
+# ---------- TEXT EXTRACTION ----------
 def extract_text(file):
     text = ""
-    fname = file.name if hasattr(file, "name") else file
 
-    if fname.endswith(".pdf"):
+    if file.name.endswith(".pdf"):
         with pdfplumber.open(file) as pdf:
             for page in pdf.pages:
-                if page.extract_text():
-                    text += page.extract_text()
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text
 
-        # OCR fallback for scanned PDFs
-        if len(text.strip()) < 50:
-            images = convert_from_path(fname)
-            for img in images:
+                # OCR fallback
+                img = page.to_image(resolution=300).original
                 text += pytesseract.image_to_string(img)
 
-    elif fname.endswith(".docx"):
-        doc = Document(file)
-        for p in doc.paragraphs:
-            text += p.text + "\n"
+    elif file.name.endswith(".docx"):
+        doc = docx.Document(file)
+        for para in doc.paragraphs:
+            text += para.text + " "
 
     return text.strip()
 
-# ------------------ NLP Keywords ------------------
-def extract_keywords(text):
-    doc = nlp(text.lower())
-    return set(token.text for token in doc if token.pos_ in ["NOUN","PROPN"] and len(token.text) > 2)
 
-# ------------------ ATS Score ------------------
-def calculate_ats(resume, job_desc):
-    job_keys = extract_keywords(job_desc)
-    resume_keys = extract_keywords(resume)
+# ---------- ATS LOGIC ----------
+def ats_score(resume_text, jd_text):
+    resume_text = resume_text.lower()
+    jd_text = jd_text.lower()
 
-    matched = resume_keys & job_keys
-    missing = job_keys - resume_keys
-    score = round((len(matched)/max(len(job_keys),1))*100,2)
-    return score, list(matched), list(missing)
+    vectorizer = TfidfVectorizer(stop_words="english")
+    tfidf = vectorizer.fit_transform([resume_text, jd_text])
 
-# ------------------ AI Resume Improvement ------------------
-def improve_resume(resume):
-    lines = resume.split("\n")
-    improved = []
-    for l in lines:
-        if len(l.strip()) > 30:
-            improved.append(f"• Achieved impact by {l.strip()}")
-    return "\n".join(improved[:8])
+    score = (tfidf * tfidf.T).A[0][1] * 100
+    score = round(score, 2)
 
-# ------------------ Job Matching ------------------
-def match_jobs(resume):
-    resume_keys = extract_keywords(resume)
-    results = []
-    for job in JOBS:
-        matched = resume_keys & set(job["keywords"])
-        score = round((len(matched)/len(job["keywords"]))*100,2)
-        results.append(f"{job['title']} ({job['location']}) → {score}%\nMatched: {list(matched)}")
-    return "\n\n".join(results)
+    keywords = set(vectorizer.get_feature_names_out())
+    resume_words = set(resume_text.split())
+    matched = keywords & resume_words
+    missing = keywords - resume_words
 
-# ------------------ PDF Report ------------------
-def generate_pdf(text):
-    path = tempfile.mktemp(".pdf")
-    c = canvas.Canvas(path, pagesize=A4)
-    txt = c.beginText(40, 800)
-    for line in text.split("\n"):
-        txt.textLine(line)
-    c.drawText(txt)
-    c.save()
-    return path
+    return score, list(matched)[:20], list(missing)[:20]
 
-# ------------------ Main Analysis ------------------
-def analyze_resume(file, job_desc):
-    resume_text = extract_text(file)
-    if len(resume_text) < 50:
-        return "❌ Resume extract nahi ho raha.", None, None
 
-    score, matched, missing = calculate_ats(resume_text, job_desc)
-    improved = improve_resume(resume_text)
-    jobs = match_jobs(resume_text)
+# ---------- MAIN FUNCTION ----------
+def process(resume, jd, location):
+    resume_text = extract_text(resume)
 
-    report = f"""
-ATS SCORE: {score}/100
+    if not resume_text:
+        return "❌ Resume text extract nahi ho raha", "", "", ""
 
-MATCHED KEYWORDS:
-{matched}
+    score, matched, missing = ats_score(resume_text, jd)
 
-MISSING KEYWORDS:
-{missing}
-
-AI IMPROVED RESUME POINTS:
-{improved}
-
-TOP JOB MATCHES:
-{jobs}
+    tips = """
+• Job description ke keywords add karo  
+• Skills section strong banao  
+• Action verbs use karo  
+• Location mention karo  
 """
 
-    pdf_path = generate_pdf(report)
-    return report, improved, pdf_path
+    return (
+        f"{score}/100",
+        ", ".join(matched),
+        ", ".join(missing),
+        f"Suggested Location Match: {location}\n\nTips:\n{tips}"
+    )
 
-# ------------------ Gradio Interface ------------------
-iface = gr.Interface(
-    fn=analyze_resume,
+
+# ---------- GRADIO UI ----------
+ui = gr.Interface(
+    fn=process,
     inputs=[
         gr.File(label="Upload Resume (PDF/DOCX)"),
-        gr.Textbox(label="Job Description", lines=5)
+        gr.Textbox(label="Job Description", lines=5),
+        gr.Textbox(label="Preferred Job Location")
     ],
     outputs=[
-        gr.Textbox(label="ATS + Job Match Report"),
-        gr.Textbox(label="AI Resume Improvement"),
-        gr.File(label="Download ATS PDF Report")
+        gr.Textbox(label="ATS Score"),
+        gr.Textbox(label="Matched Keywords"),
+        gr.Textbox(label="Missing Keywords"),
+        gr.Textbox(label="Improvement & Location")
     ],
-    title="AI Resume ATS + OCR + Improvement Tool",
-    description="Upload any resume (PDF/DOCX) → calculate ATS score, improvement tips, job match & download PDF report"
+    title="OCR + ATS Resume Scanner",
+    description="Scans ALL resumes (PDF/DOCX), calculates ATS score, keywords, OCR support & location match"
 )
 
-iface.launch(server_name="0.0.0.0", server_port=7860)
+ui.launch(server_name="0.0.0.0", server_port=7860)
