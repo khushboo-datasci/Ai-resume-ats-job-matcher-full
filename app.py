@@ -8,20 +8,20 @@ import io
 import re
 import spacy
 
-# -------------------- TESSERACT PATH --------------------
+# Tesseract path
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
-# -------------------- LOAD SPACY MODEL --------------------
+# Load spacy model
 nlp = spacy.load("en_core_web_sm")
 
-# -------------------- GENERIC SKILLS --------------------
+# Generic skills
 GENERIC_SKILLS = [
     "communication","teamwork","leadership","problem solving","time management",
     "adaptability","customer service","chat support","email support","crm",
     "python","sql","excel","data analysis","sales","marketing"
 ]
 
-# -------------------- SAMPLE JOB DATABASE --------------------
+# Sample jobs
 JOBS = [
     {"title": "Customer Support Executive", "location": "Jaipur", "skills": ["customer","chat","support","crm"]},
     {"title": "Data Analyst", "location": "Bangalore", "skills": ["data","sql","python","analysis"]},
@@ -35,9 +35,12 @@ def extract_resume_text(file):
     text = ""
     try:
         file_bytes = file.read()
+        if len(file_bytes) == 0:
+            print("No bytes read from file!")
+            return ""
 
         if file.name.endswith(".pdf"):
-            # Attempt text extraction via pdfplumber
+            # PDF text extraction
             try:
                 with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
                     for page in pdf.pages:
@@ -47,7 +50,7 @@ def extract_resume_text(file):
             except Exception as e:
                 print("pdfplumber failed:", e)
 
-            # OCR fallback for ALL PDFs (scanned or typed)
+            # OCR fallback for ALL PDFs
             try:
                 images = convert_from_bytes(io.BytesIO(file_bytes), dpi=400, fmt="ppm")
                 ocr_text = ""
@@ -173,14 +176,14 @@ iface = gr.Interface(
         gr.Textbox(label="Job Description", lines=6)
     ],
     outputs=[
-        gr.Textbox(label="ATS Report & Job Recommendations", lines=20),
-        gr.Textbox(label="Detected Skills", lines=15),
-        gr.Textbox(label="Improvement Tips", lines=15)
+        gr.Textbox(label="ATS Report & Job Recommendations", lines=15),
+        gr.Textbox(label="Detected Skills", lines=10),
+        gr.Textbox(label="Improvement Tips", lines=10)
     ],
     title="ResumeLens AI – ATS Resume Scanner & Job Matcher",
     description="Upload your resume to get ATS score, job matches, improvement tips, and location detection. Detected skills are highlighted in bold.",
 )
 
-# -------------------- LAUNCH --------------------
+# Launch
 port = int(os.environ.get("PORT", 7860))
 iface.launch(server_name="0.0.0.0", server_port=port, share=False, debug=True)
