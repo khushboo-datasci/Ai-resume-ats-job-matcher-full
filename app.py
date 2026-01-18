@@ -159,7 +159,7 @@ iface = gr.Interface(
 
 iface.launch(server_name="0.0.0.0", server_port=7860)
 
-    jobs = recommend_jobs(score, location)
+jobs = recommend_jobs(resume_text)
 
     return result, jobs, "\n".join(tips)
 
