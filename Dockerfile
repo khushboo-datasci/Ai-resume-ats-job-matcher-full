@@ -1,7 +1,6 @@
-# Start with Python 3.11 base
 FROM python:3.11-slim
 
-# Install system dependencies for PDF text extraction / OCR
+# System dependencies for PDF / OCR
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     poppler-utils \
@@ -15,6 +14,9 @@ COPY requirements.txt .
 
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
+
+# -------------------- PRE-INSTALL SPACY MODEL --------------------
+RUN python -m spacy download en_core_web_sm
 
 COPY . .
 
