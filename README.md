@@ -5,13 +5,6 @@ The system analyzes resumes (PDF/DOCX), calculates ATS score, extracts skills, f
 
 ---
 
-## 🌐 Live Deployment
-
-🚀 **Try the live app here:**  
-👉 (https://rare-gratitude-production-95d7.up.railway.app/)
-
----
-
 ## 🚀 Features
 
 - 📄 Supports **PDF & DOCX resumes**
